@@ -4,6 +4,9 @@ manpage.*
 manual.html
 manual.ps
 offlineimap.1
+/build/
+/dist/
+/offlineimap.egg-info/
 # backups
 .*.swp
 .*.swo

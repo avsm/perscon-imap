@@ -23,7 +23,7 @@
 # END OF COPYRIGHT #
 
 
-from distutils.core import setup
+from setuptools import setup
 import offlineimap.version
 
 setup(name = "offlineimap",
@@ -34,7 +34,6 @@ setup(name = "offlineimap",
       url = offlineimap.version.homepage,
       packages = ['offlineimap', 'offlineimap.folder',
                   'offlineimap.repository', 'offlineimap.ui'],
-      scripts = ['bin/offlineimap'],
       license = offlineimap.version.copyright + \
                 ", Licensed under the GPL version 2"
 )

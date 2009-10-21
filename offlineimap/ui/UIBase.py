@@ -23,6 +23,7 @@ from Queue import Empty
 
 debugtypes = {'imap': 'IMAP protocol debugging',
               'maildir': 'Maildir repository debugging',
+              'perscon' : 'Personal Container repository debugging',
               'thread': 'Threading debugging'}
 
 globalui = None

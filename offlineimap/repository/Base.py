@@ -25,13 +25,15 @@ def LoadRepository(name, account, reqtype):
     from offlineimap.repository.Gmail import GmailRepository
     from offlineimap.repository.IMAP import IMAPRepository, MappedIMAPRepository
     from offlineimap.repository.Maildir import MaildirRepository
+    from offlineimap.repository.PersCon import PersConRepository
     if reqtype == 'remote':
         # For now, we don't support Maildirs on the remote side.
         typemap = {'IMAP': IMAPRepository,
                    'Gmail': GmailRepository}
     elif reqtype == 'local':
         typemap = {'IMAP': MappedIMAPRepository,
-                   'Maildir': MaildirRepository}
+                   'Maildir': MaildirRepository,
+                   'PersCon': PersConRepository}
     else:
         raise ValueError, "Request type %s not supported" % reqtype
     config = account.getconfig()

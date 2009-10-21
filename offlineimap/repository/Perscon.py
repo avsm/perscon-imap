@@ -19,28 +19,31 @@
 from Base import BaseRepository
 from offlineimap import folder, imaputil
 from offlineimap.ui import UIBase
-from mailbox import PersCon
-import os
+#from mailbox import PersCon
+import os,sys
 from stat import *
+import Perscon_utils
+import urllib2, urllib
 
 class PersConRepository(BaseRepository):
     def __init__(self, reposname, account):
         """Initialize a PersConRepository object.  Takes a URL
         to the server holding all the mail."""
         BaseRepository.__init__(self, reposname, account)
-
-        self.root = self.getlocalroot()
-        self.folders = None
         self.ui = UIBase.getglobalui()
-        self.debug("PersConRepository initialized, sep is " + repr(self.getsep()))
-	self.folder_atimes = []
+        self.localurl = self.getconf('localurl')
 
-        # Create the top-level folder if it doesn't exist
-        if not os.path.isdir(self.root):
-            os.mkdir(self.root, 0700)
+        self.folders = None
+        self.debug("PersConRepository initialized, sep is " + repr(self.getsep()) 
+          + " localurl=" + repr(self.localurl))
+        Perscon_utils.init_url (self.localurl)
+        # test the Personal Container connection
+        self.rpc("ping")
 
-    def getlocalroot(self):
-        return os.path.expanduser(self.getconf('localfolders'))
+    def rpc(self, urifrag, data=None):
+        uri = self.localurl + urllib.quote(urifrag)
+        req = urllib2.Request(uri, data=data, headers={'Content-type':'application/json'})
+        return urllib2.urlopen(req)
 
     def debug(self, msg):
         self.ui.debug('perscon', msg)
@@ -50,110 +53,27 @@ class PersConRepository(BaseRepository):
 
     def makefolder(self, foldername):
         self.debug("makefolder called with arg " + repr(foldername))
-        # Do the chdir thing so the call to makedirs does not make the
-        # self.root directory (we'd prefer to raise an error in that case),
-        # but will make the (relative) paths underneath it.  Need to use
-        # makedirs to support a / separator.
-        self.debug("Is dir? " + repr(os.path.isdir(foldername)))
-        if self.getsep() == '/':
-            for invalid in ['new', 'cur', 'tmp', 'offlineimap.uidvalidity']:
-                for component in foldername.split('/'):
-                    assert component != invalid, "When using nested folders (/ as a separator in the account config), your folder names may not contain 'new', 'cur', 'tmp', or 'offlineimap.uidvalidity'."
-
-        assert foldername.find('./') == -1, "Folder names may not contain ../"
-        assert not foldername.startswith('/'), "Folder names may not begin with /"
-
-        oldcwd = os.getcwd()
-        os.chdir(self.root)
-
-        # If we're using hierarchical folders, it's possible that sub-folders
-        # may be created before higher-up ones.  If this is the case,
-        # makedirs will fail because the higher-up dir already exists.
-        # So, check to see if this is indeed the case.
-
-        if (self.getsep() == '/' or self.getconfboolean('existsok', 0) or foldername == '.') \
-            and os.path.isdir(foldername):
-            self.debug("makefolder: %s already is a directory" % foldername)
-            # Already exists.  Sanity-check that it's not a PersCon.
-            for subdir in ['cur', 'new', 'tmp']:
-                assert not os.path.isdir(os.path.join(foldername, subdir)), \
-                       "Tried to create folder %s but it already had dir %s" %\
-                       (foldername, subdir)
-        else:
-            self.debug("makefolder: calling makedirs %s" % foldername)
-            os.makedirs(foldername, 0700)
-        self.debug("makefolder: creating cur, new, tmp")
-        for subdir in ['cur', 'new', 'tmp']:
-            os.mkdir(os.path.join(foldername, subdir), 0700)
         # Invalidate the cache
         self.folders = None
-        os.chdir(oldcwd)
 
     def deletefolder(self, foldername):
-        self.ui.warn("NOT YET IMPLEMENTED: DELETE FOLDER %s" % foldername)
+        self.debug("deletefolder called with arg " + repr(foldername))
+        # Invalidate the cache
+        self.folders = None
 
     def getfolder(self, foldername):
-	if self.config.has_option('Repository ' + self.name, 'restoreatime') and self.config.getboolean('Repository ' + self.name, 'restoreatime'):
-	    self._append_folder_atimes(foldername)
-        return folder.PersCon.PersConFolder(self.root, foldername,
+        self.debug("getfolder " + foldername)
+        return folder.PersCon.PersConFolder(foldername,
                                             self.getsep(), self, 
                                             self.accountname, self.config)
     
-    def _getfolders_scandir(self, root, extension = None):
-        self.debug("_GETFOLDERS_SCANDIR STARTING. root = %s, extension = %s" \
-                   % (root, extension))
-        # extension willl only be non-None when called recursively when
-        # getsep() returns '/'.
-        retval = []
-
-        # Configure the full path to this repository -- "toppath"
-
-        if extension == None:
-            toppath = root
-        else:
-            toppath = os.path.join(root, extension)
-
-        self.debug("  toppath = %s" % toppath)
-
-        # Iterate over directories in top.
-        for dirname in os.listdir(toppath) + ['.']:
-            self.debug("  *** top of loop")
-            self.debug("  dirname = %s" % dirname)
-            if dirname in ['cur', 'new', 'tmp', 'offlineimap.uidvalidity']:
-                self.debug("  skipping this dir (PersCon special)")
-                # Bypass special files.
-                continue
-            fullname = os.path.join(toppath, dirname)
-            self.debug("  fullname = %s" % fullname)
-            if not os.path.isdir(fullname):
-                self.debug("  skipping this entry (not a directory)")
-                # Not a directory -- not a folder.
-                continue
-            foldername = dirname
-            if extension != None:
-                foldername = os.path.join(extension, dirname)
-            if (os.path.isdir(os.path.join(fullname, 'cur')) and
-                os.path.isdir(os.path.join(fullname, 'new')) and
-                os.path.isdir(os.path.join(fullname, 'tmp'))):
-                # This directory has maildir stuff -- process
-                self.debug("  This is a maildir folder.")
-
-                self.debug("  foldername = %s" % foldername)
-
-		if self.config.has_option('Repository ' + self.name, 'restoreatime') and self.config.getboolean('Repository ' + self.name, 'restoreatime'):
-		    self._append_folder_atimes(foldername)
-                retval.append(folder.PersCon.PersConFolder(self.root, foldername,
-                                                           self.getsep(), self, self.accountname,
-                                                           self.config))
-            if self.getsep() == '/' and dirname != '.':
-                # Check sub-directories for folders.
-                retval.extend(self._getfolders_scandir(root, foldername))
-        self.debug("_GETFOLDERS_SCANDIR RETURNING %s" % \
-                   repr([x.getname() for x in retval]))
-        return retval
+    def _getfolders_scandir(self, extension = None):
+        self.debug("_GETFOLDERS_SCANDIR STARTING. extension = %s" \
+                   % extension)
+        return []
     
     def getfolders(self):
         if self.folders == None:
-            self.folders = self._getfolders_scandir(self.root)
+            self.folders = self._getfolders_scandir()
         return self.folders
     
